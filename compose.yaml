@@ -1,0 +1,227 @@
+name: tapirxl-demo
+
+networks:
+  clinical_demo:
+    driver: bridge
+
+services:
+
+  # ── BlueFlow ────────────────────────────────────────────────────────────────
+
+  blueflow-psql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: blueflow
+      POSTGRES_USER: blueflow
+      POSTGRES_PASSWORD: demo
+    volumes:
+      - blueflow-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blueflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - clinical_demo
+
+  blueflow-redis:
+    image: redis:7-alpine
+    volumes:
+      - blueflow-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - clinical_demo
+
+  blueflow:
+    image: virtalabsinc/blueflow:${BLUEFLOW_TAG:-demo-0.3.0}
+    depends_on:
+      blueflow-psql:
+        condition: service_healthy
+      blueflow-redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://blueflow:demo@blueflow-psql:5432/blueflow
+      REDIS_URL: redis://blueflow-redis:6379/0
+      CELERY_BROKER_URL: redis://blueflow-redis:6379/0
+      DJANGO_SETTINGS_MODULE: project.settings.development
+      DJANGO_ALLOWED_HOSTS: blueflow,localhost,127.0.0.1
+      SECRET_KEY: demo-only-not-for-production
+      RUN_MIGRATIONS: "1"
+      DEFAULT_USERNAME: admin
+      DEFAULT_PASSWORD: admin
+      API_TOKEN: ${BLUEFLOW_API_TOKEN:?BLUEFLOW_API_TOKEN required — copy .env.example to .env}
+    # Workaround: virtalabsinc/blueflow:demo-0.3.0 ships without the `redis`
+    # Python package, but blueflow.celery.tasks.viper_webhook imports it even
+    # in CELERY_TASK_ALWAYS_EAGER mode (Phase 2 sync 500s otherwise).
+    # The image entrypoint does `uv sync --frozen --no-dev && migrate && exec "$@"`,
+    # which would clobber a pre-install; instead we override `command` so the
+    # pip install runs AFTER the entrypoint's sync, then exec runserver.
+    # Remove once demo-0.3.1 (or later) bundles redis. See PLAYBOOK §Failure modes.
+    command:
+      - /bin/bash
+      - -c
+      - uv pip install --quiet redis && exec /app/.venv/bin/python project/manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./init:/demo-init:ro
+      # Bind-mount overlay: surgical fix for U4 (datetime not JSON serializable)
+      # and U5 (BlueFlow's Viper webhook payload shape does not match Viper's
+      # /api/v1/assets/integrationUpload schema). See init/blueflow-patches/tasks.py
+      # for full rationale and removal instructions. PLAYBOOK §Failure modes.
+      - ./init/blueflow-patches/tasks.py:/app/blueflow/celery/tasks.py:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/').getcode() < 400 else 1)"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    networks:
+      - clinical_demo
+
+  blueflow-worker:
+    image: virtalabsinc/blueflow:${BLUEFLOW_TAG:-demo-0.3.0}
+    depends_on:
+      blueflow:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://blueflow:demo@blueflow-psql:5432/blueflow
+      REDIS_URL: redis://blueflow-redis:6379/0
+      CELERY_BROKER_URL: redis://blueflow-redis:6379/0
+      DJANGO_SETTINGS_MODULE: project.settings.development
+      SECRET_KEY: demo-only-not-for-production
+    command: ["uv", "run", "celery", "-A", "blueflow.celery", "worker", "-l", "info"]
+    networks:
+      - clinical_demo
+
+  # ── Viper ───────────────────────────────────────────────────────────────────
+
+  viper-psql:
+    build:
+      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
+      dockerfile: docker/db/Dockerfile
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: viper
+    volumes:
+      - viper-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - clinical_demo
+
+  viper:
+    build:
+      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
+      dockerfile: docker/viper/Dockerfile
+    depends_on:
+      viper-psql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@viper-psql:5432/viper
+      BETTER_AUTH_SECRET: demo-only-not-for-production-change-me
+      BETTER_AUTH_URL: http://localhost:3000
+      # NEXT_PUBLIC_APP_URL is the server-side base URL used by Viper's
+      # Inngest sync to build the `callback` field embedded in webhook
+      # payloads sent to BlueFlow (see viper/src/inngest/functions/sync-integrations.ts).
+      # It MUST satisfy two constraints simultaneously:
+      #   (a) resolve from inside the `clinical_demo` network (so BlueFlow can POST back)
+      #   (b) parse as a valid URL per Django's URLValidator on the BlueFlow side
+      #       — which rejects single-label hostnames like `viper` (no TLD).
+      # We use the alias `viper.local` (defined below under `viper.networks`) to
+      # satisfy both. `getBaseUrl()` returns "" on the browser
+      # (typeof window !== "undefined"), so this does not affect the UI;
+      # auth.ts already hardcodes localhost:3000 as a trustedOrigin.
+      NEXT_PUBLIC_APP_URL: http://viper.local:3000
+      BLUEFLOW_BASE_URL: http://blueflow:8000
+      BLUEFLOW_TOKEN: ${BLUEFLOW_API_TOKEN:?BLUEFLOW_API_TOKEN required}
+      INNGEST_DEV: "1"
+      INNGEST_BASE_URL: http://inngest:8288
+      PRISMA_CLIENT_ENGINE_TYPE: binary
+    volumes:
+      - viper-stamps:/srv/stamps
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "fetch('http://localhost:3000/').then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+    networks:
+      clinical_demo:
+        aliases:
+          # Required for the in-cluster callback URL emitted by Viper's
+          # Inngest sync. See NEXT_PUBLIC_APP_URL comment above.
+          - viper.local
+
+  inngest:
+    build:
+      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
+      dockerfile: docker/inngest/Dockerfile
+    depends_on:
+      viper:
+        condition: service_healthy
+    environment:
+      INNGEST_BOOTSTRAP_URL: http://viper:3000/api/inngest
+      INNGEST_DEV: "true"
+      INNGEST_PORT: "8288"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["inngest dev -u $$INNGEST_BOOTSTRAP_URL"]
+    networks:
+      - clinical_demo
+
+  # ── TapirXL ─────────────────────────────────────────────────────────────────
+
+  tapirxl:
+    image: virtalabsinc/tapirxl:${TAPIRXL_TAG:-demo-0.3.0}
+    depends_on:
+      blueflow:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+    environment:
+      BLUEFLOW_URL: http://blueflow:8000
+      BLUEFLOW_TOKEN: ${BLUEFLOW_API_TOKEN:?BLUEFLOW_API_TOKEN required}
+      TAPIRXL_MODE: ${TAPIRXL_MODE:-pcap}
+      TAPIRXL_PCAP_PATH: /pcap/synthetic_philips_demo.pcap
+      TAPIRXL_INTERFACE: ${TAPIRXL_INTERFACE:-eth0}
+    volumes:
+      - ./pcap:/pcap:ro
+      - ./init:/demo-init:ro
+      - tapirxl-spool:/var/lib/vector/data
+    networks:
+      - clinical_demo
+
+  # ── Replay sidecar (Phase 2 / `live` profile only) ──────────────────────────
+
+  replay:
+    build:
+      context: ./replay
+    depends_on:
+      - tapirxl
+    network_mode: "service:tapirxl"
+    volumes:
+      - ./pcap:/pcap:ro
+    environment:
+      REPLAY_PCAP: /pcap/synthetic_philips_demo.pcap
+      REPLAY_RATE: "${REPLAY_RATE:-1.0}"
+      REPLAY_LOOP: "${REPLAY_LOOP:-1}"
+    profiles:
+      - live
+
+volumes:
+  blueflow-pgdata:
+  blueflow-redis-data:
+  viper-pgdata:
+  tapirxl-spool:
+  viper-stamps:

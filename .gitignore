@@ -1,0 +1,42 @@
+# Docker
+.env
+.env.*
+.envrc
+!.env.example
+docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Logs & data
+*.log
+*.sqlite
+*.db
+
+# Secrets & certs
+*.pem
+*.key
+*.crt
