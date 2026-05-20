@@ -31,6 +31,19 @@ integration:
       echo "Then: export VIPER_API_KEY=<value>" >&2
       exit 1
     fi
+    # Workaround: TapirXL ingest leaves Asset.last_pinged=NULL, but BlueFlow's
+    # Viper webhook filters with `last_pinged__gte=since` (blueflow/models/viper.py
+    # ViperWebhookResponseList.from_request), which excludes NULL rows — the
+    # task then completes in ~10ms with zero items POSTed to Viper.
+    # Backfill before sync. Remove once TapirXL (or BlueFlow's upsert) stamps
+    # last_pinged on insert. See PLAYBOOK §Failure modes (U3).
+    echo "==> Backfilling Asset.last_pinged for Viper sync..."
+    docker compose exec -T blueflow uv run python project/manage.py shell -c "
+    from django.utils import timezone
+    from blueflow.models import Asset
+    n = Asset.objects.filter(last_pinged__isnull=True).update(last_pinged=timezone.now())
+    print(f'Backfilled last_pinged on {n} assets')
+    "
     bash init/register-viper.sh
 
 # Start live replay + tapirxl listener (Phase 2)
@@ -48,10 +61,30 @@ fresh:
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
-# Show asset count + display names from BlueFlow
+# Show asset counts + names from BlueFlow and Viper (VIPER_API_KEY for Viper)
 check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "==> BlueFlow (http://localhost:8000/api/assets/)"
     curl -sS -H "Authorization: Token ${BLUEFLOW_API_TOKEN}" \
-      http://localhost:8000/api/assets/ | jq '{count: .count, names: [.results[].display_name]}'
+      http://localhost:8000/api/assets/ \
+      | jq '{count: .count, names: [.results[].display_name]}'
+    echo ""
+    if [ -z "${VIPER_API_KEY:-}" ]; then
+      echo "==> Viper: skipped (VIPER_API_KEY not set)"
+      echo "    docker compose exec viper npm run db:create-test-api-key"
+      echo "    export VIPER_API_KEY=<value>"
+      exit 0
+    fi
+    echo "==> Viper (http://localhost:3000/api/v1/assets)"
+    viper_body=$(curl -sS -H "Authorization: Bearer ${VIPER_API_KEY}" \
+      "http://localhost:3000/api/v1/assets?pageSize=100")
+    if echo "${viper_body}" | jq -e '.code' >/dev/null 2>&1; then
+      echo "ERROR: Viper API: $(echo "${viper_body}" | jq -r '.message')" >&2
+      echo "Regenerate key: docker compose exec viper npm run db:create-test-api-key" >&2
+      exit 1
+    fi
+    echo "${viper_body}" | jq '{count: (.totalCount // 0), names: [(.items // [])[] | (.hostname // .ip // .macAddress)]}'
 
 # Tail tapirxl + blueflow-worker logs
 logs:
