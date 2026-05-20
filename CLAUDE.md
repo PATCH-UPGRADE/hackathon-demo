@@ -15,8 +15,9 @@ It does **not** own application code — each TA1 service ships its own
 - `TapirXL/.cursor/context/state_of_the_union.md` — decisions D1–D7
 
 This file distills what an agent working in the demo repo must know. When
-behaviour disagrees with `demo_playbook.md`, the playbook wins; update this
-file in the same PR.
+behaviour disagrees with `PLAYBOOK.md` (local runbook) or TapirXL's
+`demo_playbook.md` (compose shape), the playbook wins; update this file in the
+same PR.
 
 ---
 
@@ -32,10 +33,10 @@ demo/
 ├── replay/
 │   ├── Dockerfile              # alpine + tcpreplay
 │   └── entrypoint.sh           # tcpreplay --intf1=eth0 ...
-├── init/
-│   └── register-viper.sh       # §5.3 BlueFlow ↔ Viper integration setup
-├── Makefile                    # targets: up, smoke, teardown, fresh
-└── README.md                   # operator-facing runbook (mirrors playbook §5–§9)
+├── init/                       # host + container scripts (see init/README.md)
+├── justfile                    # thin recipes → init/*.sh on host
+├── PLAYBOOK.md                 # operator-facing runbook
+└── README.md                   # quick start (points to PLAYBOOK.md)
 ```
 
 The compose file is the canonical reference; anything else is convenience.
@@ -50,46 +51,49 @@ cp .env.example .env             # fill image tags + BLUEFLOW_API_TOKEN
 docker compose pull              # pull all pinned demo-<tag> images
 
 # Phase 1 (engineering smoke; PCAP one-shot)
-make smoke                       # or: docker compose run --rm tapirxl
+just parse                       # optional: PCAP → JSON only (no upload)
+just boot                        # start stack + seed BlueFlow
+just capture                     # one-shot PCAP ingest
 
-# Phase 2 (audience demo; live replay + Viper push)
-make integration                 # registers BlueFlow ↔ Viper webhook (§5.3)
-make demo-up                     # docker compose --profile live up -d
+# Phase 2 pre-flight (VIPER_API_KEY — manual paste, not a just recipe)
+docker compose exec viper npm run db:create-test-api-key
+export VIPER_API_KEY=<key printed above>
+just integrate                   # registers BlueFlow ↔ Viper webhook (§5.3)
+just demo                        # live replay + tapirxl listener
 
 # Teardown
-make fresh                       # docker compose --profile live down --volumes
+just fresh                       # docker compose --profile live down --volumes
 ```
 
 Required tools:
 
 - `docker` ≥ 24 with Compose v2 plugin
-- `curl`, `jq` (for §5.3 integration registration and §8 healthchecks)
-- `make` (or skip the wrapper and call `docker compose` directly)
+- `just`, `curl`, `jq` (for §5.3 integration registration and healthchecks)
 
 ---
 
 ## Service Inventory and Image Pins
 
-All images come from `virtalabsinc/*` on Docker Hub. **Pin exact tags in
-`compose.yaml`; never use `latest`.** Tag scheme is `demo-<semver>` (e.g.
-`demo-0.3.0`).
+TapirXL and BlueFlow are pulled as published images from `virtalabsinc/*` on Docker Hub. **Pin exact tags in `compose.yaml`; never use `latest`.** Tag scheme is `demo-<semver>` (e.g. `demo-0.3.0`). Viper, `viper-psql`, and `inngest` are currently built from local source (viper repo); `replay` is built from this repo.
 
-| Service           | Image                                          | Role | Pinned where |
-| ----------------- | ---------------------------------------------- | ---- | ------------ |
-| `blueflow-psql`   | `postgres:16-alpine`                           | BlueFlow Postgres | upstream tag |
-| `blueflow-redis`  | `redis:7-alpine`                               | BlueFlow Celery broker + result backend | upstream tag |
-| `blueflow`        | `virtalabsinc/blueflow:demo-<semver>`          | Django REST API; mounts `/api/assets/upsert/`. Auto-creates `admin/admin`. | `.env`: `BLUEFLOW_TAG` |
-| `blueflow-worker` | `virtalabsinc/blueflow:demo-<semver>`          | Celery worker; pushes asset upserts to Viper's callback URL | same as `blueflow` |
-| `viper-psql`      | `postgres:17-alpine`                           | Viper Postgres | upstream tag |
-| `viper`           | `virtalabsinc/viper:demo-<semver>`             | Viper UI (Better-Auth, Next.js) | `.env`: `VIPER_TAG` |
-| `tapirxl`         | `virtalabsinc/tapirxl:demo-<semver>`           | Parser + Vector shipper. `cap_add: [NET_ADMIN]` | `.env`: `TAPIRXL_TAG` |
-| `replay`          | `virtalabsinc/replay:demo-<semver>` (built here) | tcpreplay sidecar; shares `tapirxl`'s netns. **`profiles: ["live"]`** | local build |
+| Service           | Image / Source                                   | Role | Pinned where |
+| ----------------- | ------------------------------------------------ | ---- | ------------ |
+| `blueflow-psql`   | `postgres:16-alpine`                             | BlueFlow Postgres | upstream tag |
+| `blueflow-redis`  | `redis:7-alpine`                                 | BlueFlow Celery broker + result backend | upstream tag |
+| `blueflow`        | `virtalabsinc/blueflow:demo-<semver>`            | Django REST API; mounts `/api/assets/upsert/`. Auto-creates `admin/admin`. | `.env`: `BLUEFLOW_TAG` |
+| `blueflow-worker` | `virtalabsinc/blueflow:demo-<semver>`            | Celery worker; pushes asset upserts to Viper's callback URL | same as `blueflow` |
+| `viper-psql`      | built from source (viper repo `docker/db/`)      | Viper Postgres | local build |
+| `viper`           | built from source (viper repo `docker/viper/`)   | Viper UI (Better-Auth, Next.js) | local build |
+| `inngest`         | built from source (viper repo `docker/inngest/`) | Inngest dev server; drives Viper sync cron and triggered syncs | local build |
+| `tapirxl`         | `virtalabsinc/tapirxl:demo-<semver>`             | Parser + Vector shipper. `cap_add: [NET_ADMIN]` | `.env`: `TAPIRXL_TAG` |
+| `replay`          | built here (`replay/Dockerfile`)                 | tcpreplay sidecar; shares `tapirxl`'s netns. **`profiles: ["live"]`** | local build |
 
 Image origins:
 
 - TapirXL: built and pushed by `TapirXL/.github/workflows/release.yml` on
   annotated tag `demo-v<semver>`.
-- BlueFlow / Viper: other TA1 teams; coordinate version bumps in advance.
+- BlueFlow: other TA1 team; coordinate version bumps in advance.
+- Viper / `viper-psql` / `inngest`: built from local viper repo source. Coordinate path and tag when a published image ships.
 - `replay`: this repo, `replay/Dockerfile`. Ship as `virtalabsinc/replay:demo-<semver>` once stable.
 
 ---
@@ -165,14 +169,15 @@ no static IPs unless the audience demands them (the reference compose at
 
 | Phase | Audience | Mode | Command |
 | ----- | -------- | ---- | ------- |
-| **1** | Engineering / QA | `TAPIRXL_MODE=pcap` (one-shot mounted PCAP) | `docker compose run --rm tapirxl` |
-| **2** | Audience | `TAPIRXL_MODE=live` + `replay` profile (live netns capture) | `docker compose --profile live up -d tapirxl replay` |
+| **1** | Engineering / QA | `TAPIRXL_MODE=pcap` (one-shot mounted PCAP) | `just capture` |
+| **2** | Audience | `TAPIRXL_MODE=live` + `replay` profile (live netns capture) | `just demo` |
 
 Phase 1 must pass cleanly before Phase 2 work begins. Phase 1 does not need
 the `replay` service, the §5.3 BlueFlow ↔ Viper webhook, or any Viper UI walk-through.
 
-Phase 2 narrative: `demo_playbook.md §7`. Pre-flight is `§5.3` (Steps A–C);
-do not start Phase 2 until those run cleanly on the current volume set.
+Phase 2 narrative: `PLAYBOOK.md` Phase 2. Pre-flight is `just integrate`
+(§5.3 Steps A–C); do not start Phase 2 until those run cleanly on the current
+volume set.
 
 ---
 
@@ -180,17 +185,17 @@ do not start Phase 2 until those run cleanly on the current volume set.
 
 | # | Rule |
 | --- | --- |
-| **N1** | Pin exact `demo-<semver>` tags in `compose.yaml`. **Never `latest`.** Demo image versions are listed in `.env`; CI / make targets must read them from there, not hardcode. |
+| **N1** | Pin exact `demo-<semver>` tags in `compose.yaml`. **Never `latest`.** Demo image versions are listed in `.env`; CI / `just` targets must read them from there, not hardcode. |
 | **N2** | All VMP component images are consumed as published images. Do **not** `build:` TapirXL inside this repo. The only image built locally is `replay`. |
 | **N3** | `BLUEFLOW_API_TOKEN` from `.env` is **the** authentication seam. It populates `blueflow.environment.API_TOKEN` and `tapirxl.environment.BLUEFLOW_TOKEN` from the same value. Do not introduce a second token, do not generate one at runtime, do not commit it as a literal. |
 | **N4** | `cap_add: [NET_ADMIN]` lives on `tapirxl` only. Do not add it to `replay`; the shared netns inherits it. |
-| **N5** | `replay` is gated by `profiles: ["live"]` so `docker compose up` (default) brings up the Phase 1 stack only. Do not change this without updating `make smoke`. |
+| **N5** | `replay` is gated by `profiles: ["live"]` so `docker compose up` (default) brings up the Phase 1 stack only. Do not change this without updating `just capture`. |
 | **N6** | The PCAP under `pcap/synthetic_philips_demo.pcap` is the canonical fixture. Replacing it requires regenerating `golden_synthetic_philips_assets.jsonl` in TapirXL — coordinate the bump there first. |
 | **N7** | The compose file does **not** mutate TapirXL behaviour by remounting Vector configs. The `tapirxl:demo-<tag>` image bakes both `upload-vector.toml` and `upload-vector.pcap.toml`; rely on `TAPIRXL_MODE` to select the right one. |
 | **N8** | `tapirxl` mounts the PCAP read-only (`:ro`). The container runs as uid 10001 — never `chmod`/`chown` the host directory to fix mount perms; either rely on world-readable bits or fix the file owner. |
 | **N9** | Healthchecks are required on `blueflow-psql`, `blueflow-redis`, `blueflow`, `viper-psql`, `viper`. `depends_on: { ...: { condition: service_healthy } }` is the merge gate, not optimistic ordering. |
 | **N10** | Volumes for state are named (`tapirxl-spool`, `blueflow-pgdata`, `viper-pgdata`). Anonymous volumes are forbidden — `docker compose down --volumes` must reliably reset the demo. |
-| **N11** | Phase 2 audience demo requires §5.3 (BlueFlow ↔ Viper webhook registration) to run **before** ingest. Encode this as a Makefile target or compose `init` job; never expect the presenter to run curl by hand. |
+| **N11** | Phase 2 audience demo requires §5.3 (BlueFlow ↔ Viper webhook registration) to run **before** ingest. Encode this as `just integrate`; never expect the presenter to run curl by hand. |
 | **N12** | `latest`-tagged images may exist on Docker Hub for convenience, but the demo `compose.yaml` MUST use the immutable `demo-<semver>` tag. CI guard: `grep -E ':latest' compose.yaml` must return empty. |
 
 ---
@@ -296,8 +301,8 @@ Manual `sync` is forbidden during the talk track — if Viper stays empty, the i
 | `tapirxl` exits with `415 Unsupported Media Type` | Stale demo image without explicit `Content-Type` header | `docker compose pull tapirxl` (TapirXL D5 fix is in `demo-0.3.0+`) |
 | Vector logs `failed to lookup address information: blueflow` | Services not on the same network | `docker network inspect tapirxl-demo_default`; both must be members |
 | Phase 1 container hangs (180s+) | Compose accidentally mounting `upload-vector.toml` (file source) over the pcap config | N7: never override the image's baked configs in pcap mode |
-| BlueFlow has assets, Viper stays empty | §5.3 webhook not registered, or `blueflow-worker` not running | Re-run `make integration`; check `docker compose logs blueflow-worker` |
-| Celery 4xx to Viper callback | Stale `auth_token` / wrong `webhook_url` | Wipe Postgres volumes, re-register from scratch (`make fresh && make integration`) |
+| BlueFlow has assets, Viper stays empty | §5.3 webhook not registered, or `blueflow-worker` not running | Re-run `just integrate`; check `just logs` |
+| Celery 4xx to Viper callback | Stale `auth_token` / wrong `webhook_url` | Wipe Postgres volumes, re-register from scratch (`just fresh && just integrate`) |
 | Replay starts before tapirxl is listening | `depends_on: service_started` is too eager for live mode | Add a healthcheck to tapirxl's live mode; increase replay startup sleep |
 | `WARN ... file too small to fingerprint` | Vector file source race (compose long-running mode only) | Benign; ignore. Pcap mode does not have this. |
 
@@ -310,7 +315,7 @@ Manual `sync` is forbidden during the talk track — if Viper stays empty, the i
 - Do NOT split `BLUEFLOW_API_TOKEN` into two distinct values for `blueflow` and `tapirxl`. The token is one fact, sourced from `.env`.
 - Do NOT bind-mount Vector configs from this repo over the baked image configs. The image owns its config selection via `TAPIRXL_MODE`.
 - Do NOT `--network=host` in Phase 2. Use the dedicated bridge so `replay` can share `tapirxl`'s netns.
-- Do NOT write integration registration steps (§5.3) into the README only. Encode them as a runnable target (`make integration`); presenters do not curl by hand.
+- Do NOT write integration registration steps (§5.3) into the README only. Encode them as `just integrate`; presenters do not curl by hand.
 - Do NOT add `cap_add: [NET_ADMIN]` to any service other than `tapirxl`.
 - Do NOT commit the `.env` file. Commit `.env.example` with placeholder token values; agents and operators copy it to `.env` locally.
 - Do NOT introduce a Phase 1.5 mode. The boundary between Phase 1 (engineering) and Phase 2 (audience) is the `live` profile + `TAPIRXL_MODE`.
@@ -341,6 +346,5 @@ TapirXL-side items (A1–A3, B1, B2) live in `TapirXL/.cursor/context/demo_criti
 - Image contract changes (e.g. TapirXL adds a new `TAPIRXL_MODE` value) → mirror it under Image Contracts.
 - New common failure → add a row to Common Failure Modes; never remove rows for failures still possible.
 
-When `demo_playbook.md` (the source of truth for the VMP demo runbook) drifts
-from this file, update this file in the same PR that pulls the new playbook
-reference.
+When `PLAYBOOK.md` (local operator runbook) drifts from this file, update this
+file in the same PR.

@@ -2,10 +2,10 @@
 # BlueFlow ↔ Viper integration ceremony (playbook §5.3)
 #
 # Prerequisites:
-#   VIPER_API_KEY      — from: docker compose exec viper npm run db:create-test-api-key
+#   VIPER_API_KEY      — docker compose exec viper npm run db:create-test-api-key
 #   BLUEFLOW_API_TOKEN — from .env
 #
-# Called by: just integration
+# Called by: just integrate
 set -euo pipefail
 
 # Hosts as seen from the Docker host (curl runs on host)
@@ -15,7 +15,7 @@ BLUEFLOW_URL="${BLUEFLOW_URL:-http://localhost:8000}"
 # Internal Docker URL for BlueFlow (embedded in Viper integration record)
 BLUEFLOW_INTERNAL_URL="${BLUEFLOW_INTERNAL_URL:-http://blueflow:8000}"
 
-: "${VIPER_API_KEY:?VIPER_API_KEY is not set. Run: docker compose exec viper npm run db:create-test-api-key}"
+: "${VIPER_API_KEY:?VIPER_API_KEY is not set. Run: docker compose exec viper npm run db:create-test-api-key, then export VIPER_API_KEY=<key>}"
 : "${BLUEFLOW_API_TOKEN:?BLUEFLOW_API_TOKEN is not set. Check your .env file.}"
 
 # ── Step A: register BlueFlow as a Viper integration ──────────────────────────
