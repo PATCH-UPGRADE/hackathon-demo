@@ -102,7 +102,7 @@ services:
 
   viper-psql:
     build:
-      context: ../../../UPGRADE/Repos/viper/
+      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
       dockerfile: docker/db/Dockerfile
     environment:
       POSTGRES_USER: postgres
@@ -120,7 +120,7 @@ services:
 
   viper:
     build:
-      context: ../../../UPGRADE/Repos/viper/
+      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
       dockerfile: docker/viper/Dockerfile
     depends_on:
       viper-psql:
@@ -166,7 +166,7 @@ services:
 
   inngest:
     build:
-      context: ../../../UPGRADE/Repos/viper/
+      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
       dockerfile: docker/inngest/Dockerfile
     depends_on:
       viper:
