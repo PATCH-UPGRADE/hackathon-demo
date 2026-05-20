@@ -5,7 +5,6 @@ networks:
     driver: bridge
 
 services:
-
   # ── BlueFlow ────────────────────────────────────────────────────────────────
 
   blueflow-psql:
@@ -75,8 +74,13 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "python", "-c",
-             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/').getcode() < 400 else 1)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/').getcode() < 400 else 1)",
+        ]
       interval: 5s
       timeout: 10s
       retries: 30
@@ -84,7 +88,7 @@ services:
       - clinical_demo
 
   blueflow-worker:
-    image: virtalabsinc/blueflow:${BLUEFLOW_TAG:-demo-0.3.0}
+    image: virtalabsinc/blueflow:${BLUEFLOW_TAG:-demo-0.3.1}
     depends_on:
       blueflow:
         condition: service_healthy
@@ -94,7 +98,8 @@ services:
       CELERY_BROKER_URL: redis://blueflow-redis:6379/0
       DJANGO_SETTINGS_MODULE: project.settings.development
       SECRET_KEY: demo-only-not-for-production
-    command: ["uv", "run", "celery", "-A", "blueflow.celery", "worker", "-l", "info"]
+    command:
+      ["uv", "run", "celery", "-A", "blueflow.celery", "worker", "-l", "info"]
     networks:
       - clinical_demo
 
@@ -151,8 +156,13 @@ services:
     ports:
       - "3000:3000"
     healthcheck:
-      test: ["CMD", "node", "-e",
-             "fetch('http://localhost:3000/').then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/').then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 10s
       retries: 30
