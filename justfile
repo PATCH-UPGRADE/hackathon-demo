@@ -9,7 +9,7 @@ set dotenv-load := true
 # ── Phase 1: PCAP smoke ───────────────────────────────────────────────────────
 
 # Boot persistent stack + run one-shot PCAP ingest
-smoke:
+capture:
     docker compose up -d blueflow-psql blueflow-redis blueflow blueflow-worker viper-psql viper inngest
     docker compose exec blueflow bash /demo-init/seed-blueflow.sh
     docker compose run --rm tapirxl
@@ -17,12 +17,29 @@ smoke:
     @echo "==> Smoke complete. Verify asset count:"
     @echo "    curl -sS -H 'Authorization: Token ${BLUEFLOW_API_TOKEN}' http://localhost:8000/api/assets/ | jq .count"
 
+# Print TapirXL InventoryRecord JSONL pretty-printed (no BlueFlow upload)
+parse:
+    docker compose run --rm --no-deps --entrypoint tapirxl tapirxl \
+      parse /pcap/synthetic_philips_demo.pcap --json 2>/dev/null \
+      | grep '^{' | jq .
+
+# Phase 1 ingest + pretty-print JSONL only (no Vector log noise) while uploading
+capture-verbose:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker compose up -d blueflow-psql blueflow-redis blueflow blueflow-worker viper-psql viper inngest
+    docker compose exec blueflow bash /demo-init/seed-blueflow.sh
+    docker compose run --rm --entrypoint bash tapirxl /demo-init/tapirxl-pretty-ingest.sh
+    echo ""
+    echo "==> Capture complete. Verify asset count:"
+    echo "    just check"
+
 # ── Phase 2: integration + live demo ─────────────────────────────────────────
 
 # Register BlueFlow ↔ Viper integration (requires VIPER_API_KEY in shell)
 # Before running: docker compose exec viper npm run db:create-test-api-key
 #                 export VIPER_API_KEY=<value>
-integration:
+integrate:
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -z "${VIPER_API_KEY:-}" ]; then
@@ -47,7 +64,7 @@ integration:
     bash init/register-viper.sh
 
 # Start live replay + tapirxl listener (Phase 2)
-demo-up:
+demo:
     TAPIRXL_MODE=live docker compose --profile live up -d tapirxl replay
     @echo ""
     @echo "==> Live demo running. Watch logs:"
