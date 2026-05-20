@@ -1,6 +1,7 @@
 # Docker
 .env
 .env.*
+.envrc
 !.env.example
 docker-compose.override.yml
 docker-compose.*.yml
