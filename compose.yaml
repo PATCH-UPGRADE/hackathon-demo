@@ -197,6 +197,7 @@ services:
       TAPIRXL_INTERFACE: ${TAPIRXL_INTERFACE:-eth0}
     volumes:
       - ./pcap:/pcap:ro
+      - ./init:/demo-init:ro
       - tapirxl-spool:/var/lib/vector/data
     networks:
       - clinical_demo
