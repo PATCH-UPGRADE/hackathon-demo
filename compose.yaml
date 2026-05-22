@@ -111,7 +111,7 @@ services:
       - clinical_demo
 
   viper:
-    image: my-viper:local
+    image: ghcr.io/patch-upgrade/viper:${VIPER_TAG:-demo-0.1.0}
     depends_on:
       viper-psql:
         condition: service_healthy
