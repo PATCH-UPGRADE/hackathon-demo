@@ -20,6 +20,7 @@ if [ -z "${VIPER_API_KEY:-}" ]; then
   exit 1
 fi
 
+# B3: stamp last_pinged so the webhook queryset is non-empty
 bash "${SCRIPT_DIR}/backfill-last-pinged.sh"
 
 if [ "$ONLY_BACKFILL" -eq 0 ]; then
