@@ -144,7 +144,7 @@ services:
       INNGEST_DEV: "1"
       INNGEST_BASE_URL: http://inngest:8288
       PRISMA_CLIENT_ENGINE_TYPE: binary
-      NETWORK_FLOW_URL: http://localhost:3001/flow.json
+      NETWORK_FLOW_URL: http://network-flow/flow.json
       NETWORK_FLOW_TOKEN: foo-TODO
       VIPER_DEMO_TOKEN: ${VIPER_DEMO_TOKEN:?VIPER_DEMO_TOKEN required}
     volumes:
@@ -169,6 +169,13 @@ services:
           # Required for the in-cluster callback URL emitted by Viper's
           # Inngest sync. See NEXT_PUBLIC_APP_URL comment above.
           - viper.local
+
+  network-flow:
+    image: nginx:alpine
+    volumes:
+      - ./network_flow:/usr/share/nginx/html:ro
+    networks:
+      - clinical_demo
 
   inngest:
     image: inngest/inngest:v1.17.2
