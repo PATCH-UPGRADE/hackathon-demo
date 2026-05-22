@@ -53,14 +53,15 @@ just parse                 # Parse only (no BlueFlow upload)
 just capture               # Parse and ingest (TapirXL & BlueFlow only)
 just check blueflow        # verify assets in BlueFlow
 
-# Phase 2 pre-flight
-docker compose exec viper npm run db:create-test-api-key
-export VIPER_API_KEY=<key>
 just integrate             # Create integration with BlueFlow
+#just integrate --only-backfill Let's the user create the integration in VIPER themselves
+#url: http://blueflow:8000/api/viper/webhook/
+#token: demo-tapirxl-token-not-for-production
 
 just demo                  # live replay → BlueFlow → Viper
 just fresh                 # teardown + wipe volumes
 ```
+
 
 **Note:** run `just -l` to list all available recipes.
 

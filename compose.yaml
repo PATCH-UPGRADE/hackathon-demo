@@ -146,7 +146,7 @@ services:
       PRISMA_CLIENT_ENGINE_TYPE: binary
       NETWORK_FLOW_URL: http://network-flow/flow.json
       NETWORK_FLOW_TOKEN: foo-TODO
-      VIPER_DEMO_TOKEN: ${VIPER_DEMO_TOKEN:?VIPER_DEMO_TOKEN required}
+      VIPER_DEMO_TOKEN: ${VIPER_API_KEY:?VIPER_API_KEY required}
     volumes:
       - viper-stamps:/srv/stamps
     ports:

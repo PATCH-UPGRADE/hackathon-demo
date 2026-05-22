@@ -24,8 +24,9 @@ capture:
 # ── Phase 2: integration + live demo ─────────────────────────────────────────
 
 # Register BlueFlow ↔ Viper integration (requires VIPER_API_KEY; see PLAYBOOK Step 1)
-integrate:
-    bash init/integrate.sh
+# Pass --only-backfill to skip register-viper.sh
+integrate *args:
+    bash init/integrate.sh {{args}}
 
 # Start live replay + tapirxl listener (Phase 2).
 # Preconditions are inlined (not delegated to `boot`) so this recipe is
