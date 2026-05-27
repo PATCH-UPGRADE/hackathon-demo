@@ -56,8 +56,6 @@ just capture               # Parse and ingest (TapirXL & BlueFlow only)
 just check blueflow        # verify assets in BlueFlow
 
 # Phase 2 pre-flight
-docker compose exec viper npm run db:create-test-api-key
-export VIPER_API_KEY=<key>
 just integrate             # Create integration with BlueFlow
 
 just demo                  # live replay → BlueFlow → Viper

@@ -94,10 +94,10 @@ services:
 
   # ── Viper ───────────────────────────────────────────────────────────────────
 
+# ── Viper ───────────────────────────────────────────────────────────────────
+
   viper-psql:
-    build:
-      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
-      dockerfile: docker/db/Dockerfile
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -113,9 +113,7 @@ services:
       - clinical_demo
 
   viper:
-    build:
-      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
-      dockerfile: docker/viper/Dockerfile
+    image: ghcr.io/patch-upgrade/viper:${VIPER_TAG:-demo-0.1.0}
     depends_on:
       viper-psql:
         condition: service_healthy
@@ -137,9 +135,15 @@ services:
       NEXT_PUBLIC_APP_URL: http://viper.local:3000
       BLUEFLOW_BASE_URL: http://blueflow:8000
       BLUEFLOW_TOKEN: ${BLUEFLOW_API_TOKEN:?BLUEFLOW_API_TOKEN required}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
+      HELM_URL: ${HELM_URL}
+      HELM_TOKEN: ${HELM_TOKEN}
       INNGEST_DEV: "1"
       INNGEST_BASE_URL: http://inngest:8288
       PRISMA_CLIENT_ENGINE_TYPE: binary
+      NETWORK_FLOW_URL: http://network-flow/flow.json
+      NETWORK_FLOW_TOKEN: foo-TODO
+      VIPER_DEMO_TOKEN: ${VIPER_API_KEY:?VIPER_API_KEY required}
     volumes:
       - viper-stamps:/srv/stamps
     ports:
@@ -163,10 +167,15 @@ services:
           # Inngest sync. See NEXT_PUBLIC_APP_URL comment above.
           - viper.local
 
+  network-flow:
+    image: nginx:alpine
+    volumes:
+      - ./network_flow:/usr/share/nginx/html:ro
+    networks:
+      - clinical_demo
+
   inngest:
-    build:
-      context: ${VIPER_CONTEXT:?VIPER_CONTEXT required — path to local viper repo checkout}
-      dockerfile: docker/inngest/Dockerfile
+    image: inngest/inngest:v1.17.2
     depends_on:
       viper:
         condition: service_healthy
@@ -174,6 +183,8 @@ services:
       INNGEST_BOOTSTRAP_URL: http://viper:3000/api/inngest
       INNGEST_DEV: "true"
       INNGEST_PORT: "8288"
+    ports:
+      - "8288:8288"
     entrypoint: ["/bin/sh", "-c"]
     command: ["inngest dev -u $$INNGEST_BOOTSTRAP_URL"]
     networks:
