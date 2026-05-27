@@ -3,4 +3,8 @@
 # Invoked by: just capture
 set -euo pipefail
 
-docker compose --progress quiet run --rm --no-deps --entrypoint bash tapirxl /demo-init/tapirxl-pretty-ingest.sh
+: "${TAPIRXL_PCAP_PATH:=/pcap/ct_to_pacs_scenario.pcap}"
+
+docker compose --progress quiet run --rm --no-deps \
+  -e "TAPIRXL_PCAP_PATH=${TAPIRXL_PCAP_PATH}" \
+  --entrypoint bash tapirxl /demo-init/tapirxl-pretty-ingest.sh

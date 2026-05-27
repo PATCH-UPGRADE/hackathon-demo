@@ -6,11 +6,17 @@
 
 set dotenv-load := true
 
+# Phase 1 PCAP inside the tapirxl container (host: pcap/ct_to_pacs_scenario.pcap)
+pcap := "/pcap/ct_to_pacs_scenario.pcap"
+
+# Phase 2 live replay PCAP (host: pcap/synthetic_philips_demo.pcap)
+demo-pcap := "/pcap/synthetic_philips_demo.pcap"
+
 # ── Phase 1: PCAP smoke ───────────────────────────────────────────────────────
 
 # Print TapirXL InventoryRecord JSONL pretty-printed (no BlueFlow upload)
 parse:
-    bash init/parse.sh
+    TAPIRXL_PCAP_PATH={{pcap}} bash init/parse.sh
 
 # Boot stack + seed BlueFlow
 boot:
@@ -19,7 +25,7 @@ boot:
 
 # Run one-shot PCAP ingest
 capture:
-    bash init/capture.sh
+    TAPIRXL_PCAP_PATH={{pcap}} bash init/capture.sh
 
 # ── Phase 2: integration + live demo ─────────────────────────────────────────
 
@@ -37,7 +43,8 @@ integrate:
 demo:
     docker compose up -d blueflow-psql blueflow-redis blueflow viper-psql viper inngest
     docker compose exec blueflow bash /demo-init/seed-blueflow.sh
-    TAPIRXL_MODE=live docker compose --profile live up -d tapirxl replay
+    REPLAY_PCAP={{demo-pcap}} TAPIRXL_PCAP_PATH={{demo-pcap}} TAPIRXL_MODE=live \
+        docker compose --profile live up -d tapirxl replay
     @echo ""
     @echo "==> Live demo running. Watch logs:"
     @echo "    just logs"

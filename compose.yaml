@@ -192,7 +192,7 @@ services:
       BLUEFLOW_URL: http://blueflow:8000
       BLUEFLOW_TOKEN: ${BLUEFLOW_API_TOKEN:?BLUEFLOW_API_TOKEN required}
       TAPIRXL_MODE: ${TAPIRXL_MODE:-pcap}
-      TAPIRXL_PCAP_PATH: /pcap/synthetic_philips_demo.pcap
+      TAPIRXL_PCAP_PATH: ${TAPIRXL_PCAP_PATH:-/pcap/synthetic_philips_demo.pcap}
       TAPIRXL_INTERFACE: ${TAPIRXL_INTERFACE:-eth0}
     volumes:
       - ./pcap:/pcap:ro
@@ -212,7 +212,7 @@ services:
     volumes:
       - ./pcap:/pcap:ro
     environment:
-      REPLAY_PCAP: /pcap/synthetic_philips_demo.pcap
+      REPLAY_PCAP: ${REPLAY_PCAP:-/pcap/synthetic_philips_demo.pcap}
       REPLAY_RATE: "${REPLAY_RATE:-1.0}"
       REPLAY_LOOP: "${REPLAY_LOOP:-1}"
     profiles:
