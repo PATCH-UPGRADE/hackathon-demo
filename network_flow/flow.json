@@ -9,8 +9,8 @@
       "interfaces": [
         {
           "id": "if-ct-001",
-          "mac_address": "00:1A:2B:3C:50:10",
-          "ipv4_address": "10.40.1.10",
+          "mac_address": "00:10:18:aa:bb:01",
+          "ipv4_address": "10.40.2.20",
           "ipv6_address": null
         }
       ],
